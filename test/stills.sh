@@ -1,13 +1,26 @@
 #!/bin/bash
-cd "C:/Users/Administrator/Desktop/联动测试"
-EDGE="/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"
-BASE="file:///C:/Users/Administrator/Desktop/%E8%81%94%E5%8A%A8%E6%B5%8B%E8%AF%95/art/index.html?seed=20251107&palette="
+# 逐个色板渲染「减少动效」下的静态图，并统计墨迹覆盖率。
+# 用法：bash test/stills.sh          （在仓库任意位置跑都行）
+set -u
+HERE="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "$HERE/.." && pwd)"
+
+EDGE="${EDGE:-/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe}"
+if [ ! -x "$EDGE" ]; then
+  echo "找不到浏览器：$EDGE" >&2
+  echo "用 EDGE=/path/to/chrome bash test/stills.sh 指定" >&2
+  exit 1
+fi
+
+PY="${PY:-python}"
+URL="file://$(cd "$ROOT" && pwd | sed 's|^/\([A-Za-z]\)/|\1:/|')/index.html"
+
 for p in abyss canyon garden sumi aurora; do
+  out="$HERE/st_$p.png"
   "$EDGE" --headless=new --disable-gpu --hide-scrollbars --window-size=1200,800 \
-    --virtual-time-budget=9000 \
-    --screenshot="C:/Users/Administrator/Desktop/联动测试/art/test/st_$p.png" \
-    "${BASE}$p" 2>/dev/null
+    --virtual-time-budget=14000 --screenshot="$out" \
+    "$URL?seed=20251107&palette=$p" 2>/dev/null
   printf "%-7s " "$p"
-  python art/test/inkstat.py "art/test/st_$p.png" 2>&1 | tr '\n' ' '
+  "$PY" "$HERE/inkstat.py" "$out" 2>&1 | tr '\n' ' '
   echo
 done
