@@ -1,12 +1,12 @@
 # Ink Currents — 生成艺术
 
 一件跑在浏览器里的流体生成作品：噪声流场驱动数千条粒子，在画布上慢慢织出墨丝的走向。
-没有任何图片、字体或第三方依赖，`art/` 目录直接丢到任何静态服务器上就能跑。
+没有任何图片、字体或第三方依赖，整个仓库就是一个可直接访问的静态站点。
 
 ## 打开
 
 ```bash
-# 在 art/ 目录里起一个静态服务器
+# 在仓库根目录起一个静态服务器
 python -m http.server 8765
 # 浏览器访问 http://127.0.0.1:8765/index.html
 ```
@@ -38,7 +38,7 @@ index.html?seed=20251107&palette=sumi&motion=on
 ## 结构
 
 ```
-art/
+.
 ├── index.html          画布 + 覆盖层 UI（样式、无障碍标签、纸感图层）
 ├── js/
 │   ├── palette.js      色板引擎：Palette.get / blend / rgb
@@ -78,10 +78,10 @@ art/
 ## 验证
 
 ```bash
-node art/test/contract.test.js     # 20268 项契约断言，全绿
+node test/contract.test.js     # 20268 项契约断言，全绿
 ```
 
-`art/test/` 下还有几个无头浏览器验证页，用 devtools 协议或 headless 模式驱动：
+`test/` 下还有几个无头浏览器验证页，用 devtools 协议或 headless 模式驱动：
 
 - `probe.html` — 手动泵帧，量画布的覆盖率 / 浓墨比 / 平均亮度，支持 `?palette=` 与 `?seed=`
 - `palettes.html` — 逐个色板独立测量并做控件回归
