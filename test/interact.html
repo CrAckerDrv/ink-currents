@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>interact</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  #stage { display: block; width: 100vw; height: 100vh; }
+  select, button, #seedLabel { display: none; }
+  #status { position: fixed; left: 0; bottom: 0; margin: 0; font: 11px monospace; color: #0f0; }
+</style>
+</head>
+<body>
+<canvas id="stage"></canvas>
+<select id="palette"></select>
+<button id="seedBtn"></button>
+<button id="pauseBtn"></button>
+<button id="saveBtn"></button>
+<button id="hideBtn"></button>
+<p id="status" role="status" aria-live="polite"></p>
+<span id="seedLabel"></span>
+
+<script>
+  window.__err = [];
+  window.addEventListener('error', function (e) { window.__err.push((e.message || 'err') + '@' + (e.lineno || 0)); });
+  window.addEventListener('unhandledrejection', function (e) { window.__err.push('reject:' + e.reason); });
+  var realMatch = window.matchMedia.bind(window);
+  window.matchMedia = function (q) {
+    if (q.indexOf('prefers-reduced-motion') >= 0) {
+      return { matches: false, media: q, addListener: function () {}, removeListener: function () {},
+               addEventListener: function () {}, removeEventListener: function () {} };
+    }
+    return realMatch(q);
+  };
+  window.__queue = [];
+  window.requestAnimationFrame = function (cb) { window.__queue.push(cb); return 1; };
+</script>
+<script src="../js/palette.js"></script>
+<script src="../js/noise.js"></script>
+<script src="../js/flowfield.js"></script>
+<script src="../js/main.js"></script>
+<script>
+(function () {
+  var t = 0;
+  function pump(n) {
+    for (var i = 0; i < n; i++) {
+      var cbs = window.__queue.splice(0);
+      if (!cbs.length) return;
+      t += 16.7;
+      for (var k = 0; k < cbs.length; k++) {
+        try { cbs[k](t); } catch (e) { window.__err.push('frame:' + e.message); }
+      }
+    }
+  }
+  var c = document.getElementById('stage');
+  var status = document.getElementById('status');
+  var log = [];
+
+  pump(60);
+
+  // 1) 指针涡旋：按下、移动、抬起
+  function ptr(type, x, y) {
+    var ev = new PointerEvent(type, { clientX: x, clientY: y, bubbles: true, pointerId: 1, pointerType: 'mouse' });
+    c.dispatchEvent(ev);
+  }
+  ptr('pointerdown', 400, 300);
+  ptr('pointermove', 460, 340);
+  pump(30);
+  var power = window.Art.state.pointer.power;
+  var on = window.Art.state.pointer.on;
+  ptr('pointerup', 460, 340);
+  pump(5);
+  log.push('ptr=' + (on ? 'on' : 'off') + '/' + power.toFixed(2) + '->' + window.Art.state.pointer.on);
+
+  // 2) 空格暂停
+  window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+  pump(3);
+  log.push('space=' + (window.Art.state.paused ? 'paused' : 'running'));
+
+  // 3) 暂停时不应再前进：比较像素指纹
+  function fp() {
+    var d = c.getContext('2d').getImageData(0, 0, 40, 40).data;
+    var s = 0;
+    for (var i = 0; i < d.length; i += 97) s += d[i];
+    return s;
+  }
+  var a = fp();
+  pump(40);
+  var b = fp();
+  log.push('frozen=' + (a === b));
+
+  // 4) 空格恢复
+  window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+  pump(20);
+  log.push('resume=' + (window.Art.state.paused ? 'paused' : 'running'));
+
+  // 5) R 换种子
+  var seedBefore = window.Art.state.seed;
+  window.dispatchEvent(new KeyboardEvent('keydown', { key: 'r', bubbles: true }));
+  pump(10);
+  log.push('reseed=' + (window.Art.state.seed !== seedBefore));
+
+  // 6) H 隐藏界面 + aria-pressed
+  window.dispatchEvent(new KeyboardEvent('keydown', { key: 'h', bubbles: true }));
+  log.push('bare=' + document.body.classList.contains('bare') +
+           ',aria=' + document.getElementById('hideBtn').getAttribute('aria-pressed'));
+  window.dispatchEvent(new KeyboardEvent('keydown', { key: 'h', bubbles: true }));
+
+  // 7) 暂停按钮 aria-pressed
+  var pb = document.getElementById('pauseBtn');
+  pb.click();
+  var pa = pb.getAttribute('aria-pressed') + '/' + pb.textContent;
+  pb.click();
+  log.push('btn=' + pa);
+
+  // 8) 色板切换后状态文本更新
+  var sel = document.getElementById('palette');
+  sel.value = 'sumi';
+  sel.dispatchEvent(new Event('change'));
+  pump(10);
+  log.push('status=' + status.textContent);
+
+  // 9) 尺寸变化不报错
+  window.Art.resize();
+  pump(20);
+  log.push('size=' + c.width + 'x' + c.height);
+
+  document.title = 'INT ' + log.join(' | ') + ' err=' + window.__err.length +
+    (window.__err.length ? ':' + window.__err.slice(0, 3).join(';') : '');
+})();
+</script>
+</body>
+</html>

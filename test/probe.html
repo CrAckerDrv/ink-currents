@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>probe</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #000; }
+  #stage { display: block; width: 100%; height: 100%; }
+  #palette, button, #status, #seedLabel { display: none; }
+</style>
+</head>
+<body>
+<canvas id="stage"></canvas>
+<select id="palette"></select>
+<button id="seedBtn"></button>
+<button id="pauseBtn"></button>
+<button id="saveBtn"></button>
+<button id="hideBtn"></button>
+<p id="status"></p>
+<span id="seedLabel"></span>
+
+<script>
+  window.__err = [];
+  window.addEventListener('error', function (e) {
+    window.__err.push((e.message || 'err') + '@' + (e.lineno || 0));
+  });
+  window.__reduce = false;
+  try {
+    window.__reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  } catch (e) {}
+  // 强制走动画分支：伪造 matchMedia 结果
+  var realMatch = window.matchMedia.bind(window);
+  window.matchMedia = function (q) {
+    if (q.indexOf('prefers-reduced-motion') >= 0) {
+      return { matches: false, media: q, addListener: function () {}, removeListener: function () {}, addEventListener: function () {}, removeEventListener: function () {} };
+    }
+    return realMatch(q);
+  };
+  // 接管 rAF：帧不自动跑，等我们手动泵
+  window.__queue = [];
+  window.__pumped = 0;
+  window.requestAnimationFrame = function (cb) {
+    window.__queue.push(cb);
+    return window.__queue.length;
+  };
+</script>
+<script src="../js/palette.js"></script>
+<script src="../js/noise.js"></script>
+<script src="../js/flowfield.js"></script>
+<script src="../js/main.js"></script>
+
+<script>
+(function () {
+  // 支持 ?palette=xxx，让每个色板都在全新页面里测量
+  var m = /[?&]palette=([a-z]+)/.exec(location.search || '');
+  if (m) {
+    var sel = document.getElementById('palette');
+    sel.value = m[1];
+    sel.dispatchEvent(new Event('change'));
+  }
+
+  var q0 = window.__queue.length;
+  var t = 0;
+  for (var i = 0; i < 700; i++) {
+    var cbs = window.__queue.splice(0);
+    if (!cbs.length) break;
+    t += 16.7;
+    for (var k = 0; k < cbs.length; k++) {
+      try { cbs[k](t); } catch (e) { window.__err.push('frame:' + e.message); }
+    }
+    window.__pumped++;
+  }
+
+  var c = document.getElementById('stage');
+  var g = c.getContext('2d');
+  var d = g.getImageData(0, 0, c.width, c.height).data;
+
+  var br = (d[0] + d[(c.width - 1) * 4] + d[(c.height - 1) * c.width * 4] + d[d.length - 4]) / 4;
+  var bg = (d[1] + d[(c.width - 1) * 4 + 1] + d[(c.height - 1) * c.width * 4 + 1] + d[d.length - 3]) / 4;
+  var bb = (d[2] + d[(c.width - 1) * 4 + 2] + d[(c.height - 1) * c.width * 4 + 2] + d[d.length - 2]) / 4;
+  var n = 0, ink = 0, strong = 0, lum = 0;
+  for (var p = 0; p < d.length; p += 4 * 7) {
+    n++;
+    var m = Math.max(Math.abs(d[p] - br), Math.abs(d[p + 1] - bg), Math.abs(d[p + 2] - bb));
+    if (m > 8) ink++;
+    if (m > 45) strong++;
+    lum += d[p] * 0.299 + d[p + 1] * 0.587 + d[p + 2] * 0.114;
+  }
+
+  document.title = 'PROBE q0=' + q0 + ' frames=' + window.__pumped +
+    ' reduce=' + window.__reduce +
+    ' canvas=' + c.width + 'x' + c.height +
+    ' ink=' + (ink / n).toFixed(3) +
+    ' strong=' + (strong / n).toFixed(3) +
+    ' lum=' + (lum / n).toFixed(1) +
+    ' err=' + window.__err.length +
+    (window.__err.length ? ':' + window.__err.slice(0, 2).join('|') : '');
+})();
+</script>
+</body>
+</html>
+

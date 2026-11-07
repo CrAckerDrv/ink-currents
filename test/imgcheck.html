@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>imgcheck</title></head>
+<body><pre id="out">pending</pre>
+<script>
+var img = new Image();
+img.onload = function () {
+  var c = document.createElement('canvas');
+  c.width = img.width; c.height = img.height;
+  var g = c.getContext('2d');
+  g.drawImage(img, 0, 0);
+  var d = g.getImageData(0, 0, c.width, c.height).data;
+  var set = Object.create(null), n = 0, rs = 0, gs = 0, bs = 0;
+  var lum = new Array(16).fill(0), seen = 0;
+  for (var i = 0; i < d.length; i += 4) {
+    var r = d[i], gg = d[i+1], b = d[i+2];
+    var key = (r >> 3) + ',' + (gg >> 3) + ',' + (b >> 3);
+    if (!set[key]) { set[key] = 1; seen++; }
+    rs += r; gs += gg; bs += b;
+    var l = (0.2126*r + 0.7152*gg + 0.0722*b) / 255;
+    lum[Math.min(15, Math.floor(l * 16))]++;
+    n++;
+  }
+  var ent = 0;
+  for (var k = 0; k < 16; k++) {
+    var p = lum[k] / n;
+    if (p > 0) ent -= p * Math.log2(p);
+  }
+  var busy = 0;
+  for (var k2 = 1; k2 < 16; k2++) busy += lum[k2];
+  document.getElementById('out').textContent = JSON.stringify({
+    w: c.width, h: c.height,
+    uniqueColors: seen,
+    meanRGB: [Math.round(rs/n), Math.round(gs/n), Math.round(bs/n)],
+    lumEntropy: +ent.toFixed(3),
+    nonBgRatio: +(busy / n).toFixed(4)
+  }, null, 1);
+};
+img.onerror = function () { document.getElementById('out').textContent = 'IMG_LOAD_FAIL'; };
+img.src = 'shot.png';
+</script>
+</body></html>
+

@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Ink Currents — 生成艺术</title>
+<meta name="description" content="Ink Currents：由噪声流场驱动的生成艺术作品。点击按住画面制造涡旋，空格暂停，R 换种子。" />
+<meta name="theme-color" content="#060a16" />
+<style>
+  :root {
+    --ui: rgba(236, 244, 255, 0.92);
+    --ui-dim: rgba(236, 244, 255, 0.52);
+    --ui-line: rgba(236, 244, 255, 0.16);
+    --panel: rgba(10, 16, 28, 0.44);
+    --mono: ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+    --sans: "Segoe UI", -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    overflow: hidden;
+    background: #060a16;
+    color: var(--ui);
+    font-family: var(--sans);
+    -webkit-font-smoothing: antialiased;
+    cursor: crosshair;
+  }
+  #stage {
+    display: block;
+    position: fixed;
+    inset: 0;
+    touch-action: none;
+    width: 100%;
+    height: 100%;
+  }
+
+  /* ---------- 覆盖层：整体不拦指针 ---------- */
+  .overlay {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: clamp(14px, 2.4vw, 30px);
+    transition: opacity 0.42s ease, transform 0.42s ease;
+  }
+  body.bare .overlay { opacity: 0; transform: translateY(-6px); }
+  body.bare { cursor: none; }
+
+  /* ---------- 纸感：暗角 + 颗粒（纯 CSS，不额外请求资源） ---------- */
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 2;
+    background:
+      radial-gradient(ellipse 92% 84% at 50% 46%,
+        rgba(0, 0, 0, 0) 58%,
+        rgba(0, 0, 0, 0.16) 82%,
+        rgba(0, 0, 0, 0.40) 100%),
+      url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='140' height='140' filter='url(%23n)' opacity='0.30'/></svg>");
+    background-size: cover, 140px 140px;
+    mix-blend-mode: multiply;
+    opacity: 0.42;
+  }
+  /* 颗粒层之上再提一点空气感，避免死黑 */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 1;
+    background: radial-gradient(circle at 50% 40%, rgba(120, 190, 255, 0.055), transparent 62%);
+  }
+  .overlay { z-index: 3; }
+
+  .top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+
+  /* ---------- 标题 ---------- */
+  .title { margin: 0; }
+  .title h1 {
+    margin: 0;
+    font-size: clamp(19px, 2.6vw, 30px);
+    font-weight: 300;
+    letter-spacing: 0.30em;
+    text-transform: uppercase;
+    line-height: 1.2;
+    text-shadow: 0 2px 22px rgba(0, 0, 0, 0.65);
+  }
+  .title p {
+    margin: 6px 0 0;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    color: var(--ui-dim);
+    text-shadow: 0 1px 12px rgba(0, 0, 0, 0.8);
+  }
+
+  /* ---------- 控件条 ---------- */
+  .bar {
+    pointer-events: auto;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding: 9px 11px;
+    border: 1px solid var(--ui-line);
+    border-radius: 13px;
+    background: var(--panel);
+    backdrop-filter: blur(14px) saturate(1.25);
+    -webkit-backdrop-filter: blur(14px) saturate(1.25);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.36);
+  }
+
+  button, select {
+    font: inherit;
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.05em;
+    color: var(--ui);
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--ui-line);
+    border-radius: 9px;
+    padding: 7px 13px;
+    cursor: pointer;
+    transition: background 0.18s ease, border-color 0.18s ease, transform 0.12s ease;
+  }
+  button:hover, select:hover { background: rgba(255, 255, 255, 0.13); border-color: rgba(255, 255, 255, 0.3); }
+  button:active { transform: scale(0.97); }
+  button[aria-pressed="true"] { background: rgba(255, 255, 255, 0.2); border-color: rgba(255, 255, 255, 0.42); }
+
+  :focus-visible {
+    outline: 2px solid #7dd3fc;
+    outline-offset: 3px;
+  }
+
+  select {
+    padding-right: 30px;
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: linear-gradient(45deg, transparent 50%, var(--ui-dim) 50%),
+                      linear-gradient(135deg, var(--ui-dim) 50%, transparent 50%);
+    background-position: calc(100% - 15px) 50%, calc(100% - 10px) 50%;
+    background-size: 5px 5px, 5px 5px;
+    background-repeat: no-repeat;
+  }
+  select option { background: #0b1220; color: #e6ecf8; }
+
+  /* ---------- 底部状态与提示 ---------- */
+  .bottom {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  #status {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    color: var(--ui-dim);
+    padding: 5px 11px;
+    border-radius: 999px;
+    border: 1px solid var(--ui-line);
+    background: var(--panel);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+
+  .hints {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.08em;
+    color: var(--ui-dim);
+    text-shadow: 0 1px 10px rgba(0, 0, 0, 0.8);
+  }
+  .hints kbd {
+    font-family: inherit;
+    font-size: 10px;
+    padding: 1.5px 5px;
+    margin-right: 4px;
+    border: 1px solid var(--ui-line);
+    border-bottom-width: 2px;
+    border-radius: 5px;
+    background: rgba(255, 255, 255, 0.07);
+    color: var(--ui);
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px; height: 1px;
+    padding: 0; margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  @media (max-width: 640px) {
+    .hints { display: none; }
+    .title h1 { letter-spacing: 0.18em; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .overlay, button, select { transition: none; }
+  }
+</style>
+</head>
+<body>
+  <!-- 画布：整幅作品 -->
+  <canvas id="stage" role="img" aria-label="Ink Currents：由噪声流场驱动的抽象流体画面，色彩随时间缓慢流动。"></canvas>
+
+  <!-- 覆盖层 UI -->
+  <div class="overlay">
+    <div class="top">
+      <div class="title">
+        <h1>Ink Currents</h1>
+        <p>GENERATIVE FLOW FIELD · No.&nbsp;<span id="seedLabel">—</span></p>
+      </div>
+
+      <div class="bar" role="toolbar" aria-label="作品控制">
+        <label class="sr-only" for="palette">选择色板</label>
+        <select id="palette" aria-label="选择色板"></select>
+        <button id="seedBtn" type="button" title="换一个随机种子 (R)">换种子</button>
+        <button id="pauseBtn" type="button" aria-pressed="false" title="暂停或继续 (空格)">暂停</button>
+        <button id="saveBtn" type="button" title="导出当前画面为 PNG (S)">导出</button>
+        <button id="hideBtn" type="button" aria-pressed="false" title="隐藏界面，只看画 (H)">纯画面</button>
+      </div>
+    </div>
+
+    <div class="bottom">
+      <p id="status" role="status" aria-live="polite">正在生成…</p>
+      <ul class="hints" aria-hidden="true">
+        <li><kbd>拖拽</kbd>制造涡旋</li>
+        <li><kbd>Space</kbd>暂停</li>
+        <li><kbd>R</kbd>换种子</li>
+        <li><kbd>S</kbd>导出</li>
+        <li><kbd>H</kbd>隐藏界面</li>
+      </ul>
+    </div>
+  </div>
+
+  <script src="js/palette.js"></script>
+  <script src="js/noise.js"></script>
+  <script src="js/flowfield.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
+

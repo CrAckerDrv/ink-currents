@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>palettes</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  #stage { display: block; width: 100vw; height: 100vh; }
+  select, button, #status, #seedLabel { display: none; }
+</style>
+</head>
+<body>
+<canvas id="stage"></canvas>
+<select id="palette"></select>
+<button id="seedBtn"></button>
+<button id="pauseBtn"></button>
+<button id="saveBtn"></button>
+<button id="hideBtn"></button>
+<p id="status"></p>
+<span id="seedLabel"></span>
+
+<script>
+  window.__err = [];
+  window.addEventListener('error', function (e) {
+    window.__err.push((e.message || 'err') + '@' + (e.lineno || 0));
+  });
+  var realMatch = window.matchMedia.bind(window);
+  window.matchMedia = function (q) {
+    if (q.indexOf('prefers-reduced-motion') >= 0) {
+      return { matches: false, media: q, addListener: function () {}, removeListener: function () {},
+               addEventListener: function () {}, removeEventListener: function () {} };
+    }
+    return realMatch(q);
+  };
+  window.__queue = [];
+  window.requestAnimationFrame = function (cb) { window.__queue.push(cb); return 1; };
+</script>
+<script src="../js/palette.js"></script>
+<script src="../js/noise.js"></script>
+<script src="../js/flowfield.js"></script>
+<script src="../js/main.js"></script>
+<script>
+(function () {
+  var t = 0;
+  function pump(n) {
+    for (var i = 0; i < n; i++) {
+      var cbs = window.__queue.splice(0);
+      if (!cbs.length) return;
+      t += 16.7;
+      for (var k = 0; k < cbs.length; k++) {
+        try { cbs[k](t); } catch (e) { window.__err.push('frame:' + e.message); }
+      }
+    }
+  }
+  var c = document.getElementById('stage');
+  var g = c.getContext('2d');
+  var sel = document.getElementById('palette');
+  var out = [];
+
+  function measure() {
+    var d = g.getImageData(0, 0, c.width, c.height).data;
+    var br = d[0], bg = d[1], bb = d[2];
+    var n = 0, ink = 0, strong = 0, lum = 0;
+    for (var p = 0; p < d.length; p += 4 * 11) {
+      n++;
+      var m = Math.max(Math.abs(d[p] - br), Math.abs(d[p + 1] - bg), Math.abs(d[p + 2] - bb));
+      if (m > 8) ink++;
+      if (m > 45) strong++;
+      lum += d[p] * 0.299 + d[p + 1] * 0.587 + d[p + 2] * 0.114;
+    }
+    return { ink: +(ink / n).toFixed(3), strong: +(strong / n).toFixed(3), lum: +(lum / n).toFixed(1) };
+  }
+
+  var names = [];
+  for (var o = 0; o < sel.options.length; o++) names.push(sel.options[o].value);
+
+  for (var q = 0; q < names.length; q++) {
+    sel.value = names[q];
+    sel.dispatchEvent(new Event('change'));
+    // 清空旧墨迹：resize 会整屏重铺底色并重新撒粒子
+    window.Art.resize();
+    pump(420);
+    var m = measure();
+    out.push(names[q] + ':i' + m.ink + ',s' + m.strong + ',l' + m.lum);
+  }
+
+  // 交互回归：暂停 / 继续 / 换种子 / 纯画面
+  var pauseBtn = document.getElementById('pauseBtn');
+  pauseBtn.click();
+  var pausedLabel = pauseBtn.textContent;
+  pauseBtn.click();
+  document.getElementById('seedBtn').click();
+  pump(120);
+  document.getElementById('hideBtn').click();
+  var bare = document.body.classList.contains('bare');
+  document.getElementById('hideBtn').click();
+
+  document.title = 'PAL ' + out.join(' | ') +
+    ' paused=' + pausedLabel +
+    ' bare=' + bare +
+    ' canv=' + c.width + 'x' + c.height +
+    ' err=' + window.__err.length +
+    (window.__err.length ? ':' + window.__err.slice(0, 3).join('|') : '');
+})();
+</script>
+</body>
+</html>
+
